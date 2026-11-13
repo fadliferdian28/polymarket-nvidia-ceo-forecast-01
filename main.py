@@ -4,12 +4,14 @@
 Forecasts the Yes price of every market of Polymarket's "Next CEO of
 NVIDIA?" event, minute by minute, 4 hours ahead, as five quantiles.
 
-Design v2 (chosen over v1 on an extended backtest: 19 checkpoints every
-4h Nov 10-13 2026, the 6 official practice cases, and 5 fresh out-of-sample
-hourly checkpoints Nov 13 07:00-11:00 UTC from data fetched after the
-sweeps; the house baseline's published practice score 0.363589 was
-reproduced exactly by the same harness, so the comparison is apples to
-apples):
+Design v3 (v2 base + retuned quantile levels; chosen over v2 after five
+more sweep rounds, 9-13, chasing the live leaderboard's top practice score
+of 0.243 — the design below is the v2 base, the v3 retune is the last
+bullet). Selection used 19 checkpoints every 4h Nov 10-13 2026, the 6
+official practice cases, and 5 fresh out-of-sample hourly checkpoints Nov
+13 07:00-11:00 UTC from data fetched after the sweeps; the house baseline's
+published practice score 0.363589 was reproduced exactly by the same
+harness, so the comparison is apples to apples:
 
   - Quantiles live in LOGIT space, not price space: prices sit in [0, 1]
     and most markets hug 0, so normal quantiles in price space waste mass
@@ -37,13 +39,21 @@ apples):
   - The 5% and 95% quantiles are widened by 1.30x: jumps of 0.05-0.24
     still happen in the recent regime, and a normal tail under-covers
     them. The 25%/75% quantiles keep the normal width.
+  - v3 retunes the quantile levels themselves: the lower quantiles sit
+    further out (5% at -1.80, 25% at -0.85) and the upper ones closer in
+    (75% at 0.5, 95% at 1.50), because this event's moves are
+    left-skewed — sudden drops are more common than sudden rises. Deeper
+    retunes (25% at -1.50) looked better on the backtest but FAILED the
+    fresh holdout, so the mild version was kept. Sum-reversion,
+    thresholded mean reversion, and jump-skewness median corrections
+    were all tested and rejected: every median-touching idea hurt.
 
 Validated on the 6 official practice cases plus a 7th case built from the
 same public history (checkpoint Nov 13 06:00 UTC) and 5 fresh holdout
-checkpoints: mean pinball loss 0.275441 over the 6 official practice cases
-(house 0.363589, -24%; v1 scored 0.290140), 0.243215 over the 7 recent
-checkpoints (v1 0.256388), 0.070520 over the 5 fresh holdout checkpoints
-(v1 0.081706, winning all 5). Format, determinism (two runs
+checkpoints: mean pinball loss 0.269565 over the 6 official practice cases
+(house 0.363589, -26%; v2 scored 0.275441), 0.238475 over the 7 recent
+checkpoints (v2 0.243215), 0.069117 over the 5 fresh holdout checkpoints
+(v2 0.070520, winning all 5). Format, determinism (two runs
 byte-identical) and runtime (under 0.1 s per case against an 8 s cap) all
 verified locally before submission.
 
@@ -59,8 +69,10 @@ INPUT_DIR = os.environ.get("MAKEFUN_INPUT_DIR", "/input")
 OUTPUT_DIR = os.environ.get("MAKEFUN_OUTPUT_DIR", "/output")
 
 QUANTILES = [0.05, 0.25, 0.5, 0.75, 0.95]
-# The standard normal's quantile at each level, to 6 decimals.
-Z = [-1.644854, -0.67449, 0.0, 0.67449, 1.644854]
+# Retuned quantile levels (v3): this event's moves are left-skewed, so the
+# lower quantiles sit further out and the upper ones closer in than normal.
+# Validated on 19 backtest checkpoints + 5 fresh holdout checkpoints.
+Z = [-1.80, -0.85, 0.0, 0.5, 1.50]
 
 WINDOW = 1440         # minutes of history for the long sigma (24 hours)
 BLEND_WINDOW = 60     # minutes of history for the short sigma (1 hour)
