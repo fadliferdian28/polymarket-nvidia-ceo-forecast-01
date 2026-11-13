@@ -93,7 +93,7 @@ backtest but failed the holdout were rejected outright (ungated and gated
 sum-reversion alone, split-normal quantiles, asymmetric vol, vol decay).
 
 Validated on the 6 official practice cases plus a 7th case built from the
-same public history (checkpoint Nov 13 06:00 UTC) and 11 fresh holdout
+same public history (checkpoint Nov 13 06:00 UTC) and 13 fresh holdout
 checkpoints: mean pinball loss 0.248906 over the 6 official practice cases
 (house 0.363589, -32%; v5 scored 0.259288), 0.223018 over the 7
 recent checkpoints (v5 0.229642), 0.059891 over the 13 fresh holdout
