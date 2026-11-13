@@ -86,7 +86,8 @@ checkpoints: mean pinball loss 0.259288 over the 6 official practice cases
 recent checkpoints (v4 0.230648), 0.058675 over the 11 fresh holdout
 checkpoints (v4 0.058926 — the v5 change wins on the holdout too, unlike
 the round-19 combos which won the backtest and lost the holdout and were
-rejected). Format, determinism (two runs byte-identical) and runtime
+rejected), and 0.932638 over the full 19-checkpoint backtest (v4 0.938438).
+Format, determinism (two runs byte-identical) and runtime
 (under 0.3 s per case against an 8 s cap) all verified locally before
 submission.
 
