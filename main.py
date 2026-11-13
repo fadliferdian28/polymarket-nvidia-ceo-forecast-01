@@ -124,7 +124,7 @@ REP_MSR_TAU = 120.0   # timescale (min) for the median sum-reversion ramp
 REP_MSR_LO = 0.8      # only revert when the cross-market sum is >= 0.8
 REP_MSR_HI = 1.2      # only revert when the cross-market sum is <= 1.2
 
-ENS_W = 0.7           # weight on leg A (v3) in the ensemble average
+ENS_W = 0.7           # weight on leg A (v3); leg B takes the remaining 0.3
 
 
 def robust_sigma(diffs):
