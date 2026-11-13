@@ -4,8 +4,13 @@
 Forecasts the Yes price of every market of Polymarket's "Next CEO of
 NVIDIA?" event, minute by minute, 4 hours ahead, as five quantiles.
 
-Design v4: a 70/30 ENSEMBLE of two forecasters whose errors partly cancel.
-Leg A (70%) is the v3 forecaster below; leg B (30%) is a gated replica of
+Design v5: a 70/30 ENSEMBLE of two forecasters whose errors partly cancel.
+Leg A (70%) is the v3 forecaster below, with one v5 change: big markets
+(last price >= 0.10) use a STRONGER left-skew quantile retune (5% at -2.0,
+25% at -1.0, 75% at 0.4, 95% at 1.30) while small markets keep the v3
+levels — the big markets are the ones that absorb sharp drops, and the
+split won on all four evaluations (backtest ALL/RECENT/PRACTICE plus a
+fresh 11-checkpoint holdout). Leg B (30%) is a gated replica of
 a friend's submitted v2 (price space, winsorized mean-absolute-move vol,
 median sum-reversion toward x/sum). The ensemble was chosen after rounds
 14-17, which tested the friend's full write-up (sum-reversion, asymmetric
@@ -75,13 +80,13 @@ backtest but failed the holdout were rejected outright (ungated and gated
 sum-reversion alone, split-normal quantiles, asymmetric vol, vol decay).
 
 Validated on the 6 official practice cases plus a 7th case built from the
-same public history (checkpoint Nov 13 06:00 UTC) and 10 fresh holdout
-checkpoints: mean pinball loss 0.260489 over the 6 official practice cases
-(house 0.363589, -28%; v3 alone scored 0.269565), 0.230648 over the 7
-recent checkpoints (v3 0.238475), 0.059850 over the 10 fresh holdout
-checkpoints (v3 0.058755 — the ensemble costs ~0.001 in calm conditions
-and gains ~0.009 when the market moves, which the 48-hour final run will
-include). Format, determinism (two runs byte-identical) and runtime
+same public history (checkpoint Nov 13 06:00 UTC) and 11 fresh holdout
+checkpoints: mean pinball loss 0.259288 over the 6 official practice cases
+(house 0.363589, -29%; v4 scored 0.260489), 0.229642 over the 7
+recent checkpoints (v4 0.230648), 0.058675 over the 11 fresh holdout
+checkpoints (v4 0.058926 — the v5 change wins on the holdout too, unlike
+the round-19 combos which won the backtest and lost the holdout and were
+rejected). Format, determinism (two runs byte-identical) and runtime
 (under 0.3 s per case against an 8 s cap) all verified locally before
 submission.
 
@@ -100,6 +105,10 @@ QUANTILES = [0.05, 0.25, 0.5, 0.75, 0.95]
 # Retuned quantile levels (leg A / v3): this event's moves are left-skewed,
 # so the lower quantiles sit further out and the upper ones closer in.
 Z = [-1.80, -0.85, 0.0, 0.5, 1.50]
+# v5: big markets (last price >= 0.10) want a STRONGER left-skew retune —
+# they are the ones that absorb sharp drops. Small markets keep Z.
+Z_HI = [-2.0, -1.0, 0.0, 0.4, 1.30]
+Z_HI_THRESH = 0.10
 
 WINDOW = 1440         # minutes of history for the long sigma (24 hours)
 BLEND_WINDOW = 60     # minutes of history for the short sigma (1 hour)
@@ -204,11 +213,12 @@ def forecast_market_v3(prices, horizon):
             log_prices, BLEND_WINDOW
         )
     rows = []
+    zz = Z_HI if x >= Z_HI_THRESH else Z
     for h in range(1, horizon + 1):
         spread = sigma * (h ** ALPHA)
         tail_spread = sigma * (h ** TAIL_ALPHA)
         row = []
-        for j, z in enumerate(Z):
+        for j, z in enumerate(zz):
             if j in (0, 4):
                 v = sigmoid(lx + z * tail_spread * TAIL_SCALE)
             else:
