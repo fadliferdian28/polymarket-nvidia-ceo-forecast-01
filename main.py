@@ -4,7 +4,7 @@
 Forecasts the Yes price of every market of Polymarket's "Next CEO of
 NVIDIA?" event, minute by minute, 4 hours ahead, as five quantiles.
 
-Design v5: a 70/30 ENSEMBLE of two forecasters whose errors partly cancel.
+Design v6: a 70/30 ENSEMBLE of two forecasters whose errors partly cancel.
 Leg A (70%) is the v3 forecaster below, with one v5 change: big markets
 (last price >= 0.10) use a STRONGER left-skew quantile retune (5% at -2.0,
 25% at -1.0, 75% at 0.4, 95% at 1.30) while small markets keep the v3
@@ -20,6 +20,19 @@ official practice cases, and 10 fresh out-of-sample half-hourly
 checkpoints Nov 13 07:00-11:30 UTC from data fetched after the sweeps; the
 house baseline's published practice score 0.363589 was reproduced exactly
 by the same harness, so the comparison is apples to apples.
+
+Design v6: leg A gains an ASYMMETRIC MEDIAN (round 25, inspired by the
+board leader's "slow asymmetric bounce + down-continuation"): after a
+recent rise the median gives the rise back in full, ramping in over
+~120 minutes; after a recent fall the median does NOT continue down.
+The asymmetry is the whole point — a symmetric give-back and a
+down-continuation were both tested and both HURT (the down leg alone
+cost +0.004 on the practice cases), while the up-bounce alone won on
+all four evaluations (practice, recent, full backtest, fresh holdout).
+Rises in this event are noise that reverts; falls are signal that
+persists. The give-back uses the 60-minute return and applies in price
+space before the logit transform, so the median at long horizons after
+a rise returns toward the price an hour ago.
 
 Leg A (v3, 70%):
   - Quantiles live in LOGIT space, not price space: prices sit in [0, 1]
@@ -81,12 +94,11 @@ sum-reversion alone, split-normal quantiles, asymmetric vol, vol decay).
 
 Validated on the 6 official practice cases plus a 7th case built from the
 same public history (checkpoint Nov 13 06:00 UTC) and 11 fresh holdout
-checkpoints: mean pinball loss 0.259288 over the 6 official practice cases
-(house 0.363589, -29%; v4 scored 0.260489), 0.229642 over the 7
-recent checkpoints (v4 0.230648), 0.058675 over the 11 fresh holdout
-checkpoints (v4 0.058926 — the v5 change wins on the holdout too, unlike
-the round-19 combos which won the backtest and lost the holdout and were
-rejected), and 0.932638 over the full 19-checkpoint backtest (v4 0.938438).
+checkpoints: mean pinball loss 0.248906 over the 6 official practice cases
+(house 0.363589, -32%; v5 scored 0.259288), 0.223018 over the 7
+recent checkpoints (v5 0.229642), 0.059891 over the 13 fresh holdout
+checkpoints (v5 0.063167 — the v6 change wins 11 of 13 checkpoints),
+and 0.921418 over the full 19-checkpoint backtest (v5 0.932638).
 Format, determinism (two runs byte-identical) and runtime
 (under 0.3 s per case against an 8 s cap) all verified locally before
 submission.
@@ -110,6 +122,11 @@ Z = [-1.80, -0.85, 0.0, 0.5, 1.50]
 # they are the ones that absorb sharp drops. Small markets keep Z.
 Z_HI = [-2.0, -1.0, 0.0, 0.4, 1.30]
 Z_HI_THRESH = 0.10
+# v6: asymmetric median — give back the recent rise in full (k_up 1.0),
+# never continue a fall (k_down 0). 60-minute return, ~120-min ramp.
+ASYM_K_UP = 1.0
+ASYM_WINDOW = 60
+ASYM_TAU = 120.0
 
 WINDOW = 1440         # minutes of history for the long sigma (24 hours)
 BLEND_WINDOW = 60     # minutes of history for the short sigma (1 hour)
@@ -206,6 +223,7 @@ def forecast_market_v3(prices, horizon):
         x = 0.5
         sigma = FALLBACK_SIGMA
         lx = logit(x)
+        aret = 0.0
     else:
         x = prices[-1]
         lx = logit(x)
@@ -213,17 +231,26 @@ def forecast_market_v3(prices, horizon):
         sigma = (1.0 - BLEND_F) * window_sigma(log_prices, WINDOW) + BLEND_F * window_sigma(
             log_prices, BLEND_WINDOW
         )
+        # v6: the 60-minute return, for the asymmetric median.
+        aw = min(ASYM_WINDOW, n - 1)
+        aret = x - prices[n - 1 - aw]
     rows = []
     zz = Z_HI if x >= Z_HI_THRESH else Z
     for h in range(1, horizon + 1):
+        # v6: after a recent rise, the median gives the rise back in full
+        # (ramping in over ~120 min); after a fall, no continuation.
+        if aret > 0:
+            lm = logit(x - (1.0 - math.exp(-h / ASYM_TAU)) * ASYM_K_UP * aret)
+        else:
+            lm = lx
         spread = sigma * (h ** ALPHA)
         tail_spread = sigma * (h ** TAIL_ALPHA)
         row = []
         for j, z in enumerate(zz):
             if j in (0, 4):
-                v = sigmoid(lx + z * tail_spread * TAIL_SCALE)
+                v = sigmoid(lm + z * tail_spread * TAIL_SCALE)
             else:
-                v = sigmoid(lx + z * spread)
+                v = sigmoid(lm + z * spread)
             row.append(price6(v))
         for j in range(1, 5):
             if row[j] < row[j - 1]:
